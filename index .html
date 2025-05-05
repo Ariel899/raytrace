@@ -1,171 +1,131 @@
 <!DOCTYPE html>
-<html>
+<html lang="id">
 <head>
-    <title>Basic Ray Tracing Demo</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Demo Raytracer Dasar - Satu Bola (Fixed)</title>
+    <style>
+        body { 
+            margin: 20px; 
+            font-family: Arial, sans-serif; 
+            background-color: #1a1a1a; 
+            color: #ffffff; 
+        }
+        canvas { 
+            border: 2px solid #444; 
+            background-color: #000; 
+            display: block; 
+            margin: 20px auto; 
+            box-shadow: 0 0 15px rgba(255, 255, 255, 0.1);
+        }
+        h1, p { 
+            text-align: center; 
+            margin: 10px 0;
+        }
+    </style>
 </head>
 <body>
-    <canvas id="raytracerCanvas" width="400" height="400"></canvas>
+    <h1>Demo Raytracer Dasar (Fixed)</h1>
+    <p>Menampilkan bola putih dengan sistem koordinat yang benar</p>
+    <canvas id="raytraceCanvas" width="500" height="500"></canvas>
 
     <script>
-        // Langkah 1: Setup Canvas
-        const canvas = document.getElementById('raytracerCanvas');
+        // Helper functions untuk operasi vektor 3D
+        const Vec3 = {
+            create: (x = 0, y = 0, z = 0) => ({ x, y, z }),
+            add: (v1, v2) => Vec3.create(v1.x + v2.x, v1.y + v2.y, v1.z + v2.z),
+            subtract: (v1, v2) => Vec3.create(v1.x - v2.x, v1.y - v2.y, v1.z - v2.z),
+            scale: (v, s) => Vec3.create(v.x * s, v.y * s, v.z * s),
+            dot: (v1, v2) => v1.x * v2.x + v1.y * v2.y + v1.z * v2.z,
+            length: (v) => Math.sqrt(Vec3.dot(v, v)),
+            normalize: (v) => {
+                const len = Vec3.length(v);
+                return len > 0 ? Vec3.scale(v, 1/len) : Vec3.create();
+            }
+        };
+
+        // Inisialisasi canvas
+        const canvas = document.getElementById('raytraceCanvas');
         const ctx = canvas.getContext('2d');
-        const imageData = ctx.createImageData(canvas.width, canvas.height);
+        const width = canvas.width;
+        const height = canvas.height;
 
-        // Langkah 2: Definisi Kamera
-        const camera = {
-            position: { x: 0, y: 0, z: 0 },  // Posisi kamera di origin
-            viewport: {
-                width: 1.0,     // Lebar viewport
-                height: 1.0,    // Tinggi viewport
-                distance: 1.0   // Jarak dari kamera
-            }
-        };
-
-        // Langkah 3: Definisi Bola dalam Scene
-        const spheres = [
-            {
-                center: { x: 0, y: 0, z: -3 },
-                radius: 1,
-                color: { r: 255, g: 0, b: 0 }  // Warna merah
+        // Konfigurasi scene
+        const scene = {
+            camera: {
+                position: Vec3.create(0, 0, 2),  // Posisi kamera di z = 2
+                viewPlaneZ: -1                    // View plane di z = -1
             },
-            {
-                center: { x: 0.5, y: -0.5, z: -2 },
-                radius: 0.5,
-                color: { r: 0, g: 0, b: 255 }  // Warna biru
-            }
-        ];
-
-        // Langkah 4: Definisi Cahaya
-        const light = {
-            position: { x: 2, y: 1, z: 0 },
-            intensity: 1.5
+            sphere: {
+                center: Vec3.create(0, 0, 0),     // Pusat bola di origin
+                radius: 1,
+                color: '#ffffff'                  // Warna putih
+            },
+            backgroundColor: '#000000'            // Latar hitam
         };
 
-        // Langkah 5: Fungsi Hitung Dot Product
-        function dot(v1, v2) {
-            return v1.x * v2.x + v1.y * v2.y + v1.z * v2.z;
-        }
-
-        // Langkah 6: Fungsi Interseksi Ray-Sphere
+        // Fungsi intersection ray-sphere
         function intersectSphere(rayOrigin, rayDirection, sphere) {
-            const oc = {
-                x: rayOrigin.x - sphere.center.x,
-                y: rayOrigin.y - sphere.center.y,
-                z: rayOrigin.z - sphere.center.z
-            };
+            const oc = Vec3.subtract(rayOrigin, sphere.center);
+            const a = Vec3.dot(rayDirection, rayDirection);
+            const b = 2 * Vec3.dot(oc, rayDirection);
+            const c = Vec3.dot(oc, oc) - sphere.radius * sphere.radius;
+            const discriminant = b*b - 4*a*c;
+
+            if (discriminant < 0) return null;
             
-            const a = dot(rayDirection, rayDirection);
-            const b = 2 * dot(oc, rayDirection);
-            const c = dot(oc, oc) - sphere.radius * sphere.radius;
-            
-            const discriminant = b * b - 4 * a * c;
-            
-            if (discriminant < 0) {
-                return Infinity; // Tidak ada interseksi
-            }
-            
-            return (-b - Math.sqrt(discriminant)) / (2 * a);
+            const sqrtD = Math.sqrt(discriminant);
+            const t1 = (-b - sqrtD) / (2*a);
+            const t2 = (-b + sqrtD) / (2*a);
+
+            if (t1 > 0.001) return t1;
+            if (t2 > 0.001) return t2;
+            return null;
         }
 
-        // Langkah 7: Fungsi Trace Ray
-        function traceRay(rayOrigin, rayDirection) {
-            let closestT = Infinity;
-            let closestSphere = null;
+        // Proses ray tracing
+        function render() {
+            const startTime = performance.now();
             
-            // Cari interseksi terdekat
-            for (const sphere of spheres) {
-                const t = intersectSphere(rayOrigin, rayDirection, sphere);
-                if (t < closestT && t > 0) {
-                    closestT = t;
-                    closestSphere = sphere;
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    // Hitung koordinat viewport (-1 ke 1 dengan koreksi aspect ratio)
+                    const screenX = (2 * (x/width) - 1) * (width/height);
+                    const screenY = 1 - (2 * (y/height));
+                    
+                    // Titik di view plane
+                    const viewPlanePoint = Vec3.create(screenX, screenY, scene.camera.viewPlaneZ);
+                    
+                    // Arah sinar (dari kamera ke view plane)
+                    const rayDir = Vec3.normalize(
+                        Vec3.subtract(viewPlanePoint, scene.camera.position)
+                    );
+
+                    // Cek intersection
+                    const t = intersectSphere(scene.camera.position, rayDir, scene.sphere);
+                    
+                    // Warna pixel
+                    ctx.fillStyle = t !== null ? scene.sphere.color : scene.backgroundColor;
+                    ctx.fillRect(x, y, 1, 1);
+
+                    // Debug: pixel tengah
+                    if (x === 250 && y === 250) {
+                        console.log('Pixel tengah:', {
+                            screenX,
+                            screenY,
+                            rayDir,
+                            t
+                        });
+                    }
                 }
             }
             
-            if (closestSphere) {
-                // Hitung posisi interseksi
-                const point = {
-                    x: rayOrigin.x + closestT * rayDirection.x,
-                    y: rayOrigin.y + closestT * rayDirection.y,
-                    z: rayOrigin.z + closestT * rayDirection.z
-                };
-                
-                // Hitung normal di titik interseksi
-                const normal = {
-                    x: point.x - closestSphere.center.x,
-                    y: point.y - closestSphere.center.y,
-                    z: point.z - closestSphere.center.z
-                };
-                
-                // Normalisasi normal
-                const length = Math.sqrt(dot(normal, normal));
-                normal.x /= length;
-                normal.y /= length;
-                normal.z /= length;
-                
-                // Hitung arah cahaya
-                const lightDir = {
-                    x: light.position.x - point.x,
-                    y: light.position.y - point.y,
-                    z: light.position.z - point.z
-                };
-                
-                // Normalisasi arah cahaya
-                const lightLength = Math.sqrt(dot(lightDir, lightDir));
-                lightDir.x /= lightLength;
-                lightDir.y /= lightLength;
-                lightDir.z /= lightLength;
-                
-                // Hitung difuse lighting
-                const diffuse = Math.max(0, dot(normal, lightDir));
-                
-                // Gabungkan warna dengan lighting
-                return {
-                    r: Math.min(255, closestSphere.color.r * diffuse * light.intensity),
-                    g: Math.min(255, closestSphere.color.g * diffuse * light.intensity),
-                    b: Math.min(255, closestSphere.color.b * diffuse * light.intensity)
-                };
-            }
-            
-            // Warna latar belakang jika tidak ada interseksi
-            return { r: 50, g: 50, b: 50 };
+            const renderTime = performance.now() - startTime;
+            console.log(`Render selesai dalam ${renderTime.toFixed(2)} ms`);
         }
 
-        // Langkah 8: Render Loop
-        for (let y = 0; y < canvas.height; y++) {
-            for (let x = 0; x < canvas.width; x++) {
-                // Hitung koordinat viewport
-                const aspectRatio = canvas.width / canvas.height;
-                const viewportX = ((x / canvas.width) - 0.5) * camera.viewport.width * aspectRatio;
-                const viewportY = ((y / canvas.height) - 0.5) * camera.viewport.height;
-                
-                // Buat arah ray
-                const rayDirection = {
-                    x: viewportX,
-                    y: viewportY,
-                    z: -camera.viewport.distance
-                };
-                
-                // Normalisasi arah ray
-                const length = Math.sqrt(dot(rayDirection, rayDirection));
-                rayDirection.x /= length;
-                rayDirection.y /= length;
-                rayDirection.z /= length;
-                
-                // Trace ray dan dapatkan warna
-                const color = traceRay(camera.position, rayDirection);
-                
-                // Set pixel di imageData
-                const index = (y * canvas.width + x) * 4;
-                imageData.data[index] = color.r;
-                imageData.data[index + 1] = color.g;
-                imageData.data[index + 2] = color.b;
-                imageData.data[index + 3] = 255; // Alpha channel
-            }
-        }
-
-        // Langkah 9: Tampilkan gambar ke canvas
-        ctx.putImageData(imageData, 0, 0);
+        // Jalankan render
+        render();
     </script>
 </body>
 </html>
